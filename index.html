@@ -25,7 +25,8 @@
     background:var(--bg);
     color:var(--text);
     font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
-    overflow:hidden;
+    overflow-y:auto;
+    overflow-x:hidden;
     user-select:none;
   }
   .display{font-family:'Fraunces',Georgia,serif;}
@@ -33,7 +34,8 @@
   #app{
     position:relative;
     width:100vw;
-    height:100vh;
+    min-height:100vh;
+    min-height:100dvh;
     display:flex;
     flex-direction:column;
   }
@@ -90,7 +92,8 @@
   }
   #liveCanvas, #previewVideo{
     display:block;
-    max-height:78vh;
+    max-height:56vh;
+    max-height:56dvh;
     max-width:74vw;
   }
   #previewVideo{ display:none; }
@@ -298,6 +301,86 @@
   }
   #galleryEmpty{ font-size:13px; color:var(--text-dim); }
 
+  /* ---------- Template slot manager (in Settings) ---------- */
+  .templateSlot{
+    display:flex; align-items:center; gap:12px;
+    padding:10px; margin-bottom:10px;
+    background:var(--bg-elev-2); border:1px solid var(--border); border-radius:10px;
+  }
+  .templateSlot .thumb{
+    width:52px; height:70px; border-radius:6px; object-fit:cover;
+    background:#2a2730; flex-shrink:0; border:1px solid var(--border);
+  }
+  .templateSlot .thumb.empty{
+    display:flex; align-items:center; justify-content:center;
+    color:var(--text-dim); font-size:11px; text-align:center;
+  }
+  .templateSlot .slotInfo{ flex:1; min-width:0; }
+  .templateSlot .slotInfo input[type=text]{
+    padding:8px 10px; font-size:13px; margin-bottom:6px;
+  }
+  .templateSlot .slotActions{ display:flex; gap:6px; }
+  .templateSlot .slotActions .btn{
+    padding:7px 12px; font-size:12px;
+  }
+
+  /* ---------- Template picker (shown before a session starts) ---------- */
+  #templatePickerOverlay{
+    display:none;
+    position:fixed; inset:0;
+    background:var(--bg);
+    z-index:40;
+    flex-direction:column;
+    align-items:center;
+    padding:36px 24px;
+    overflow-y:auto;
+  }
+  #templatePickerOverlay h2{
+    font-family:'Fraunces',Georgia,serif;
+    font-size:26px;
+    margin-bottom:6px;
+    text-align:center;
+  }
+  #templatePickerOverlay .sub{
+    color:var(--text-dim);
+    font-size:14px;
+    margin-bottom:30px;
+    text-align:center;
+  }
+  #templateGrid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));
+    gap:18px;
+    max-width:760px;
+    width:100%;
+  }
+  .templateCard{
+    background:var(--bg-elev);
+    border:2px solid var(--border);
+    border-radius:14px;
+    padding:14px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+    cursor:pointer;
+    transition:border-color .15s, transform .1s;
+  }
+  .templateCard:hover{ border-color:var(--accent); transform:translateY(-2px); }
+  .templateCard:active{ transform:scale(0.98); }
+  .templateCard img{
+    width:100%; aspect-ratio:2/3; object-fit:cover;
+    border-radius:8px; background:#2a2730;
+  }
+  .templateCard .name{
+    font-size:14px; font-weight:600; text-align:center;
+  }
+  .templateCard.noTemplateCard .thumbPlaceholder{
+    width:100%; aspect-ratio:2/3; border-radius:8px; background:#2a2730;
+    display:flex; align-items:center; justify-content:center;
+    font-size:34px;
+  }
+
   #statusMsg{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
     background:var(--bg-elev-2); border:1px solid var(--border);
@@ -313,15 +396,31 @@
     #eventTitle{ font-size:18px; }
     #gearBtn{ width:36px; height:36px; font-size:16px; }
     #stage{ padding:0 12px 4px; }
-    #liveCanvas, #previewVideo{ max-height:60vh; max-width:94vw; }
+    #liveCanvas, #previewVideo{ max-height:50vh; max-height:50dvh; max-width:94vw; }
     #countdownNum{ font-size:110px; }
     #shotFeedback span{ font-size:32px; padding:10px 22px; }
     #bottombar{ padding:20px 16px 32px; flex-wrap:wrap; }
     .btn{ padding:16px 28px 14px; font-size:15px; }
     .btn-lg{ font-size:16px; padding:18px 36px 16px; }
     #reviewControls{ flex-wrap:wrap; justify-content:center; }
-    #stripCanvasDisplay{ max-height:58vh; max-width:90vw; }
+    #stripCanvasDisplay{ max-height:48vh; max-height:48dvh; max-width:90vw; }
     #settingsPanel{ padding:20px; max-height:92vh; }
+  }
+
+  /* Short/landscape screens (e.g. tablet rotated horizontally): shrink the
+     camera frame further so the buttons below are never pushed off-screen. */
+  @media (max-height: 480px){
+    #topbar{ padding:8px 16px; }
+    #eventTitle{ font-size:16px; }
+    #gearBtn{ width:32px; height:32px; font-size:14px; }
+    #stage{ padding:0 12px 2px; }
+    #liveCanvas, #previewVideo{ max-height:42vh; max-height:42dvh; max-width:60vw; }
+    #countdownNum{ font-size:70px; }
+    #bottombar{ padding:10px 16px 14px; gap:10px; }
+    .btn{ padding:11px 22px 9px; font-size:13px; }
+    .btn-lg{ font-size:14px; padding:12px 26px 10px; }
+    #idleHint{ font-size:12px; margin-top:8px; }
+    #stripCanvasDisplay{ max-height:38vh; max-height:38dvh; }
   }
 </style>
 </head>
@@ -351,7 +450,7 @@
   <div id="bottombar">
     <div id="idleControls">
       <button class="btn btn-primary btn-lg" id="startBtn">Mulai Sesi Foto</button>
-      <div id="idleHint">Berpose dan tekan mulai — 3 foto akan diambil otomatis</div>
+      <div id="idleHint">Berpose dan tekan mulai</div>
     </div>
 
     <div id="reviewControls" style="display:none; gap:16px; align-items:center;">
@@ -391,15 +490,14 @@
     </div>
 
     <div class="field">
-      <label>Template / Latar Strip</label>
-      <div class="row" style="align-items:center;">
-        <input type="color" id="bgColorInput" value="#ffffff" style="height:44px; padding:4px; cursor:pointer;">
-        <button class="btn btn-ghost" id="uploadBgBtn" style="padding:11px; font-size:13px;">Upload Gambar Template</button>
-      </div>
-      <input type="file" id="bgFileInput" accept="image/png,image/jpeg" style="display:none;">
-      <div class="hint" id="bgFileName">Belum ada gambar template — pakai warna solid di atas.</div>
-      <button class="btn btn-ghost" id="clearBgBtn" style="width:100%; margin-top:8px; padding:9px; font-size:12px; display:none;">Hapus gambar template, pakai warna solid</button>
-      <div class="hint">Gambar sebaiknya sudah didesain pas dengan rasio kertas (misal 50x150mm) supaya tidak gepeng saat di-stretch. Foto akan ditempel di atas gambar ini.</div>
+      <label>Warna latar (kalau pelanggan pilih "Tanpa Template")</label>
+      <input type="color" id="bgColorInput" value="#ffffff" style="height:44px; padding:4px; cursor:pointer; width:100%;">
+    </div>
+
+    <div class="field">
+      <label>Kelola Template (maks 4 pilihan)</label>
+      <div class="hint" style="margin-bottom:12px;">Upload sampai 4 desain template. Sebelum sesi foto dimulai, pelanggan akan diminta memilih salah satu dari template yang tersedia di sini.</div>
+      <div id="templateSlots"></div>
     </div>
 
     <div class="field toggleRow">
@@ -445,6 +543,12 @@
   </div>
 </div>
 
+<div id="templatePickerOverlay">
+  <h2>Pilih Template</h2>
+  <div class="sub">Pilih desain template untuk sesi foto ini</div>
+  <div id="templateGrid"></div>
+</div>
+
 <div id="statusMsg"></div>
 <iframe id="printFrame"></iframe>
 
@@ -462,13 +566,17 @@
     paperH: 210,
     autosave: true,
     bgColor: "#ffffff",
-    bgImage: null,
+    templates: [null, null, null, null], // up to 4: {name, dataUrl} or null
     photosPerSession: 4,
     copies: 2,
     showPrintText: true
   };
+  let sessionTemplate = null; // dataUrl chosen from the picker for the CURRENT session, or null
   let shotCounter = parseInt(localStorage.getItem('photobooth_counter') || '0', 10);
   let settings = Object.assign({}, DEFAULTS, loadSettings());
+  if(!Array.isArray(settings.templates) || settings.templates.length !== 4){
+    settings.templates = [null, null, null, null];
+  }
   let stream = null;
   let videoEl = document.getElementById('previewVideo');
   let liveCanvas = document.getElementById('liveCanvas');
@@ -871,41 +979,67 @@
     ctx.fillRect(0,0,W,H);
 
     let bgImgEl = null;
-    if(settings.bgImage){
-      try{ bgImgEl = await loadImage(settings.bgImage); }catch(e){ bgImgEl = null; }
+    if(sessionTemplate){
+      try{ bgImgEl = await loadImage(sessionTemplate); }catch(e){ bgImgEl = null; }
     }
 
+    // Detect slots on the template at its OWN natural resolution first —
+    // this tells us whether the uploaded file is a single strip (n slots,
+    // to be tiled `copies` times) or an already-doubled design (n*copies
+    // slots laid out side by side, used as-is).
+    let rawSlots = [];
     if(bgImgEl){
-      ctx.drawImage(bgImgEl, 0, 0, W, H);
+      try{ rawSlots = detectTemplateSlots(bgImgEl); }catch(e){ rawSlots = []; }
     }
 
-    // Try auto-detecting slots from the template (only meaningful if a
-    // custom template image is set). Coordinates are scaled from the
-    // template's natural size to the final canvas size.
-    let groups = null;
-    if(bgImgEl){
-      try{
-        const rawSlots = detectTemplateSlots(bgImgEl);
-        const scaleX = W / bgImgEl.naturalWidth;
-        const scaleY = H / bgImgEl.naturalHeight;
-        const scaledSlots = rawSlots.map(s => ({
-          x: s.x*scaleX, y: s.y*scaleY, w: s.w*scaleX, h: s.h*scaleY
-        }));
-        groups = groupSlotsIntoCopies(scaledSlots, n, copies);
-      }catch(e){ groups = null; }
-    }
+    let handled = false;
 
-    if(groups){
-      // Place captured photos precisely into the detected template slots,
-      // duplicating the same set of shots into every copy/column found.
-      groups.forEach(slotGroup=>{
-        slotGroup.forEach((slot, i)=>{
-          if(shots[i]) drawShotIntoBox(ctx, shots[i], slot.x, slot.y, slot.w, slot.h);
+    if(bgImgEl && rawSlots.length === n){
+      // SINGLE-STRIP template: tile the template image itself `copies`
+      // times side by side, and place the same set of shots into the
+      // detected slot positions within every tile.
+      const colW = W / copies;
+      for(let c=0; c<copies; c++){
+        const colX = c*colW;
+        ctx.drawImage(bgImgEl, colX, 0, colW, H);
+      }
+      const scaleX = colW / bgImgEl.naturalWidth;
+      const scaleY = H / bgImgEl.naturalHeight;
+      const orderedSlots = rawSlots.slice().sort((a,b)=> a.y - b.y);
+      for(let c=0; c<copies; c++){
+        const colX = c*colW;
+        orderedSlots.forEach((slot, i)=>{
+          if(!shots[i]) return;
+          drawShotIntoBox(ctx, shots[i], colX + slot.x*scaleX, slot.y*scaleY, slot.w*scaleX, slot.h*scaleY);
         });
-      });
-    }else{
-      // Fallback: no template, or template slots couldn't be matched
-      // reliably — draw an evenly-spaced grid of `copies` columns instead.
+      }
+      handled = true;
+    }else if(bgImgEl && rawSlots.length === n*copies){
+      // ALREADY-DOUBLED template (e.g. two strips pre-designed side by
+      // side in one file): stretch it across the full sheet as-is, then
+      // group the detected slots into `copies` columns by position.
+      ctx.drawImage(bgImgEl, 0, 0, W, H);
+      const scaleX = W / bgImgEl.naturalWidth;
+      const scaleY = H / bgImgEl.naturalHeight;
+      const scaledSlots = rawSlots.map(s => ({
+        x: s.x*scaleX, y: s.y*scaleY, w: s.w*scaleX, h: s.h*scaleY
+      }));
+      const groups = groupSlotsIntoCopies(scaledSlots, n, copies);
+      if(groups){
+        groups.forEach(slotGroup=>{
+          slotGroup.forEach((slot, i)=>{
+            if(shots[i]) drawShotIntoBox(ctx, shots[i], slot.x, slot.y, slot.w, slot.h);
+          });
+        });
+        handled = true;
+      }
+    }
+
+    if(!handled){
+      // Fallback: no usable template, or slot detection didn't cleanly
+      // match either pattern above — draw an evenly-spaced grid instead.
+      // If a template image exists, tile it per column as a best-effort
+      // backdrop rather than stretching it across the whole sheet.
       const colW = W / copies;
       const margin = Math.round(colW * 0.06);
       const showText = !!settings.showPrintText;
@@ -918,6 +1052,9 @@
 
       for(let c=0; c<copies; c++){
         const colX = c*colW;
+        if(bgImgEl){
+          ctx.drawImage(bgImgEl, colX, 0, colW, H);
+        }
         if(showText && settings.eventTitle){
           ctx.fillStyle = '#1a1a1a';
           ctx.font = '600 ' + Math.round(headerH*0.5) + 'px Fraunces, Georgia, serif';
@@ -1035,6 +1172,132 @@
   }
 
   // ---------------- Settings UI ----------------
+  // ---------------- Template slot manager (Settings panel) ----------------
+  function renderTemplateSlots(){
+    const wrap = document.getElementById('templateSlots');
+    wrap.innerHTML = '';
+    for(let i=0;i<4;i++){
+      const tpl = settings.templates[i];
+      const row = document.createElement('div');
+      row.className = 'templateSlot';
+
+      const thumb = document.createElement(tpl ? 'img' : 'div');
+      thumb.className = 'thumb' + (tpl ? '' : ' empty');
+      if(tpl){ thumb.src = tpl.dataUrl; } else { thumb.textContent = 'Kosong'; }
+      row.appendChild(thumb);
+
+      const info = document.createElement('div');
+      info.className = 'slotInfo';
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.placeholder = 'Nama template ' + (i+1);
+      nameInput.value = tpl ? (tpl.name || '') : '';
+      nameInput.addEventListener('change', ()=>{
+        if(settings.templates[i]){
+          settings.templates[i].name = nameInput.value.trim() || ('Template ' + (i+1));
+          saveSettingsToStorage();
+        }
+      });
+      info.appendChild(nameInput);
+
+      const actions = document.createElement('div');
+      actions.className = 'slotActions';
+      const uploadBtn = document.createElement('button');
+      uploadBtn.className = 'btn btn-ghost';
+      uploadBtn.type = 'button';
+      uploadBtn.textContent = tpl ? 'Ganti Gambar' : 'Upload Gambar';
+      uploadBtn.addEventListener('click', ()=>{
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/png,image/jpeg';
+        fileInput.addEventListener('change', (e)=>{
+          const file = e.target.files[0];
+          if(!file) return;
+          const reader = new FileReader();
+          reader.onload = (ev)=>{
+            settings.templates[i] = {
+              name: (tpl && tpl.name) || ('Template ' + (i+1)),
+              dataUrl: ev.target.result
+            };
+            saveSettingsToStorage();
+            renderTemplateSlots();
+            showStatus('Template ' + (i+1) + ' diunggah', 1800);
+          };
+          reader.readAsDataURL(file);
+        });
+        fileInput.click();
+      });
+      actions.appendChild(uploadBtn);
+
+      if(tpl){
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn btn-ghost';
+        removeBtn.type = 'button';
+        removeBtn.textContent = 'Hapus';
+        removeBtn.addEventListener('click', ()=>{
+          settings.templates[i] = null;
+          saveSettingsToStorage();
+          renderTemplateSlots();
+        });
+        actions.appendChild(removeBtn);
+      }
+      info.appendChild(actions);
+      row.appendChild(info);
+      wrap.appendChild(row);
+    }
+  }
+
+  // ---------------- Template picker (before each session) ----------------
+  function renderTemplatePicker(){
+    const grid = document.getElementById('templateGrid');
+    grid.innerHTML = '';
+    const activeTemplates = settings.templates.filter(t => t);
+
+    activeTemplates.forEach(tpl=>{
+      const card = document.createElement('div');
+      card.className = 'templateCard';
+      const img = document.createElement('img');
+      img.src = tpl.dataUrl;
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = tpl.name || 'Template';
+      card.appendChild(img);
+      card.appendChild(name);
+      card.addEventListener('click', ()=>{ chooseTemplateAndStart(tpl.dataUrl); });
+      grid.appendChild(card);
+    });
+
+    // always offer a "no template" plain option too
+    const noneCard = document.createElement('div');
+    noneCard.className = 'templateCard noTemplateCard';
+    const placeholder = document.createElement('div');
+    placeholder.className = 'thumbPlaceholder';
+    placeholder.textContent = '✕';
+    const noneName = document.createElement('div');
+    noneName.className = 'name';
+    noneName.textContent = 'Tanpa Template';
+    noneCard.appendChild(placeholder);
+    noneCard.appendChild(noneName);
+    noneCard.addEventListener('click', ()=>{ chooseTemplateAndStart(null); });
+    grid.appendChild(noneCard);
+  }
+
+  function beginFlow(){
+    const hasTemplates = settings.templates.some(t => t);
+    if(hasTemplates){
+      renderTemplatePicker();
+      document.getElementById('templatePickerOverlay').style.display = 'flex';
+    }else{
+      chooseTemplateAndStart(null);
+    }
+  }
+
+  function chooseTemplateAndStart(dataUrl){
+    sessionTemplate = dataUrl;
+    document.getElementById('templatePickerOverlay').style.display = 'none';
+    startSession();
+  }
+
   function openSettings(){
     document.getElementById('eventTitleInput').value = settings.eventTitle;
     document.getElementById('fisheyeSlider').value = settings.fisheye;
@@ -1047,13 +1310,7 @@
     document.getElementById('autosaveToggle').classList.toggle('on', settings.autosave);
     document.getElementById('showTextToggle').classList.toggle('on', settings.showPrintText);
     document.getElementById('bgColorInput').value = settings.bgColor || '#ffffff';
-    if(settings.bgImage){
-      document.getElementById('bgFileName').textContent = 'Template terpasang.';
-      document.getElementById('clearBgBtn').style.display = 'block';
-    }else{
-      document.getElementById('bgFileName').textContent = 'Belum ada gambar template — pakai warna solid di atas.';
-      document.getElementById('clearBgBtn').style.display = 'none';
-    }
+    renderTemplateSlots();
     populateCameraList();
     renderGallery();
     document.getElementById('settingsOverlay').style.display = 'flex';
@@ -1087,7 +1344,7 @@
   }
 
   // ---------------- Wire up events ----------------
-  document.getElementById('startBtn').addEventListener('click', startSession);
+  document.getElementById('startBtn').addEventListener('click', beginFlow);
   document.getElementById('retakeBtn').addEventListener('click', backToIdle);
   document.getElementById('doneBtn').addEventListener('click', backToIdle);
   document.getElementById('printBtn').addEventListener('click', printStrip);
@@ -1095,31 +1352,6 @@
   document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
   document.getElementById('saveSettingsBtn').addEventListener('click', applySettingsFromUI);
   document.getElementById('refreshCamerasBtn').addEventListener('click', populateCameraList);
-  document.getElementById('uploadBgBtn').addEventListener('click', ()=>{
-    document.getElementById('bgFileInput').click();
-  });
-  document.getElementById('bgFileInput').addEventListener('change', (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev)=>{
-      settings.bgImage = ev.target.result;
-      settings.showPrintText = false;
-      document.getElementById('showTextToggle').classList.remove('on');
-      saveSettingsToStorage();
-      document.getElementById('bgFileName').textContent = 'Template terpasang: ' + file.name;
-      document.getElementById('clearBgBtn').style.display = 'block';
-      showStatus('Template diunggah — judul & tanggal otomatis dimatikan', 2400);
-    };
-    reader.readAsDataURL(file);
-  });
-  document.getElementById('clearBgBtn').addEventListener('click', ()=>{
-    settings.bgImage = null;
-    saveSettingsToStorage();
-    document.getElementById('bgFileName').textContent = 'Belum ada gambar template — pakai warna solid di atas.';
-    document.getElementById('clearBgBtn').style.display = 'none';
-    showStatus('Template dihapus', 1500);
-  });
   document.getElementById('fisheyeSlider').addEventListener('input', (e)=>{
     document.getElementById('fisheyeVal').textContent = e.target.value;
     settings.fisheye = parseInt(e.target.value,10); // live-update preview while adjusting
