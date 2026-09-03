@@ -402,6 +402,12 @@
       <div class="hint">Gambar sebaiknya sudah didesain pas dengan rasio kertas (misal 50x150mm) supaya tidak gepeng saat di-stretch. Foto akan ditempel di atas gambar ini.</div>
     </div>
 
+    <div class="field toggleRow">
+      <label style="margin:0;">Tampilkan judul & tanggal saat cetak</label>
+      <div class="switch on" id="showTextToggle"></div>
+    </div>
+    <div class="hint" style="margin:-14px 0 20px;">Matikan ini kalau kamu pakai template sendiri yang sudah lengkap dengan judul/logo, supaya hasil cetak polos ikut desain template saja.</div>
+
     <div class="field">
       <label>Jumlah foto per sesi</label>
       <input type="number" id="photosPerSessionInput" value="4" min="1" max="8">
@@ -458,7 +464,8 @@
     bgColor: "#ffffff",
     bgImage: null,
     photosPerSession: 4,
-    copies: 2
+    copies: 2,
+    showPrintText: true
   };
   let shotCounter = parseInt(localStorage.getItem('photobooth_counter') || '0', 10);
   let settings = Object.assign({}, DEFAULTS, loadSettings());
@@ -901,8 +908,9 @@
       // reliably — draw an evenly-spaced grid of `copies` columns instead.
       const colW = W / copies;
       const margin = Math.round(colW * 0.06);
-      const headerH = bgImgEl ? 0 : Math.round(H * 0.05);
-      const footerH = bgImgEl ? 0 : Math.round(H * 0.045);
+      const showText = !!settings.showPrintText;
+      const headerH = showText ? Math.round(H * 0.05) : 0;
+      const footerH = showText ? Math.round(H * 0.045) : 0;
       const gap = Math.round(colW * 0.05);
       const photoAreaH = H - headerH - footerH - gap*(n+1);
       const photoW = colW - margin*2;
@@ -910,12 +918,12 @@
 
       for(let c=0; c<copies; c++){
         const colX = c*colW;
-        if(!bgImgEl){
+        if(showText && settings.eventTitle){
           ctx.fillStyle = '#1a1a1a';
           ctx.font = '600 ' + Math.round(headerH*0.5) + 'px Fraunces, Georgia, serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(settings.eventTitle || 'Photobooth', colX + colW/2, headerH/2 + 4);
+          ctx.fillText(settings.eventTitle, colX + colW/2, headerH/2 + 4);
         }
         let y = headerH + gap;
         shots.forEach(shotCanvas=>{
@@ -927,9 +935,11 @@
           }
           y += photoH + gap;
         });
-        if(!bgImgEl){
+        if(showText){
           ctx.fillStyle = '#6b6b6b';
           ctx.font = '400 ' + Math.round(footerH*0.4) + 'px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
           ctx.fillText(new Date().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}), colX + colW/2, H - footerH/2);
         }
       }
@@ -1035,6 +1045,7 @@
     document.getElementById('copiesInput').value = settings.copies;
     document.getElementById('mirrorToggle').classList.toggle('on', settings.mirror);
     document.getElementById('autosaveToggle').classList.toggle('on', settings.autosave);
+    document.getElementById('showTextToggle').classList.toggle('on', settings.showPrintText);
     document.getElementById('bgColorInput').value = settings.bgColor || '#ffffff';
     if(settings.bgImage){
       document.getElementById('bgFileName').textContent = 'Template terpasang.';
@@ -1052,7 +1063,7 @@
   }
 
   function applySettingsFromUI(){
-    settings.eventTitle = document.getElementById('eventTitleInput').value.trim() || 'Photobooth';
+    settings.eventTitle = document.getElementById('eventTitleInput').value.trim();
     settings.fisheye = parseInt(document.getElementById('fisheyeSlider').value, 10);
     settings.paperW = parseInt(document.getElementById('paperWidth').value, 10) || 148;
     settings.paperH = parseInt(document.getElementById('paperHeight').value, 10) || 210;
@@ -1060,13 +1071,14 @@
     settings.copies = Math.max(1, parseInt(document.getElementById('copiesInput').value, 10) || 2);
     settings.mirror = document.getElementById('mirrorToggle').classList.contains('on');
     settings.autosave = document.getElementById('autosaveToggle').classList.contains('on');
+    settings.showPrintText = document.getElementById('showTextToggle').classList.contains('on');
     settings.bgColor = document.getElementById('bgColorInput').value;
     const camSel = document.getElementById('cameraSelect');
     const newDeviceId = camSel.value;
     const deviceChanged = newDeviceId !== settings.deviceId;
     settings.deviceId = newDeviceId;
 
-    document.getElementById('eventTitle').textContent = settings.eventTitle;
+    document.getElementById('eventTitle').textContent = settings.eventTitle || 'Photobooth';
     saveSettingsToStorage();
     closeSettings();
     showStatus('Pengaturan disimpan', 1800);
@@ -1092,10 +1104,12 @@
     const reader = new FileReader();
     reader.onload = (ev)=>{
       settings.bgImage = ev.target.result;
+      settings.showPrintText = false;
+      document.getElementById('showTextToggle').classList.remove('on');
       saveSettingsToStorage();
       document.getElementById('bgFileName').textContent = 'Template terpasang: ' + file.name;
       document.getElementById('clearBgBtn').style.display = 'block';
-      showStatus('Template diunggah', 1800);
+      showStatus('Template diunggah — judul & tanggal otomatis dimatikan', 2400);
     };
     reader.readAsDataURL(file);
   });
@@ -1116,12 +1130,15 @@
   document.getElementById('autosaveToggle').addEventListener('click', function(){
     this.classList.toggle('on');
   });
+  document.getElementById('showTextToggle').addEventListener('click', function(){
+    this.classList.toggle('on');
+  });
   document.getElementById('settingsOverlay').addEventListener('click', (e)=>{
     if(e.target.id === 'settingsOverlay') closeSettings();
   });
 
   // ---------------- Init ----------------
-  document.getElementById('eventTitle').textContent = settings.eventTitle;
+  document.getElementById('eventTitle').textContent = settings.eventTitle || 'Photobooth';
   rebuildShotDots();
   navigator.mediaDevices.enumerateDevices().then(()=>{
     startCamera(settings.deviceId || undefined);
