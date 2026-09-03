@@ -340,11 +340,7 @@
       <div id="flash"></div>
       <div id="countdownOverlay"><div class="display" id="countdownNum">3</div></div>
       <div id="shotFeedback"><span id="shotFeedbackText">📸 Bagus!</span></div>
-      <div id="shotDots">
-        <div class="dot" data-i="0"></div>
-        <div class="dot" data-i="1"></div>
-        <div class="dot" data-i="2"></div>
-      </div>
+      <div id="shotDots"></div>
     </div>
 
     <div id="reviewWrap">
@@ -407,10 +403,21 @@
     </div>
 
     <div class="field">
+      <label>Jumlah foto per sesi</label>
+      <input type="number" id="photosPerSessionInput" value="4" min="1" max="8">
+    </div>
+
+    <div class="field">
+      <label>Jumlah salinan berdampingan dalam 1 lembar</label>
+      <input type="number" id="copiesInput" value="2" min="1" max="4">
+      <div class="hint">Contoh: isi 2 kalau mau 1 lembar A5 berisi 2 strip identik berdampingan (total foto tercetak = jumlah foto per sesi x jumlah salinan).</div>
+    </div>
+
+    <div class="field">
       <label>Ukuran kertas cetak (mm)</label>
       <div class="row">
-        <input type="number" id="paperWidth" value="50" min="20" max="300">
-        <input type="number" id="paperHeight" value="150" min="20" max="400">
+        <input type="number" id="paperWidth" value="148" min="20" max="300">
+        <input type="number" id="paperHeight" value="210" min="20" max="400">
       </div>
       <div class="hint">Default 50mm x 150mm (setara 2x6 inci, ukuran umum strip photobooth).</div>
     </div>
@@ -445,11 +452,13 @@
     eventTitle: "Photobooth",
     mirror: true,
     fisheye: 0,
-    paperW: 50,
-    paperH: 150,
+    paperW: 148,
+    paperH: 210,
     autosave: true,
     bgColor: "#ffffff",
-    bgImage: null
+    bgImage: null,
+    photosPerSession: 4,
+    copies: 2
   };
   let shotCounter = parseInt(localStorage.getItem('photobooth_counter') || '0', 10);
   let settings = Object.assign({}, DEFAULTS, loadSettings());
@@ -664,14 +673,26 @@
   }
 
   // ---------------- Capture session ----------------
+  function rebuildShotDots(){
+    const wrap = document.getElementById('shotDots');
+    wrap.innerHTML = '';
+    for(let i=0;i<settings.photosPerSession;i++){
+      const d = document.createElement('div');
+      d.className = 'dot';
+      d.setAttribute('data-i', i);
+      wrap.appendChild(d);
+    }
+  }
+
   async function startSession(){
     if(capturing) return;
     capturing = true;
     shots = [];
-    document.querySelectorAll('.dot').forEach(d=>d.classList.remove('done'));
+    rebuildShotDots();
     document.getElementById('startBtn').disabled = true;
 
-    for(let i=0;i<3;i++){
+    const n = settings.photosPerSession;
+    for(let i=0;i<n;i++){
       await countdown(3);
       await captureShot(i);
       await sleep(1000);
@@ -749,9 +770,92 @@
     });
   }
 
+  // Scans a template image for solid near-white rectangular regions and
+  // returns their bounding boxes in the image's OWN natural pixel coordinates.
+  // Used to auto-detect photo "slots" in a user-supplied template design.
+  function detectTemplateSlots(imgEl){
+    const DETECT_W = 480;
+    const scale = DETECT_W / imgEl.naturalWidth;
+    const DETECT_H = Math.max(1, Math.round(imgEl.naturalHeight * scale));
+    const c = document.createElement('canvas');
+    c.width = DETECT_W; c.height = DETECT_H;
+    const cx = c.getContext('2d');
+    cx.drawImage(imgEl, 0, 0, DETECT_W, DETECT_H);
+    const imgData = cx.getImageData(0,0,DETECT_W,DETECT_H);
+    const data = imgData.data;
+    const total = DETECT_W*DETECT_H;
+    const isWhite = (px)=>{
+      const i = px*4;
+      return data[i] > 238 && data[i+1] > 238 && data[i+2] > 238 && data[i+3] > 200;
+    };
+    const visited = new Uint8Array(total);
+    const regions = [];
+    const stack = new Int32Array(total);
+    for(let start=0; start<total; start++){
+      if(visited[start]) continue;
+      if(!isWhite(start)){ visited[start]=1; continue; }
+      let sp = 0;
+      stack[sp++] = start;
+      visited[start] = 1;
+      let minX=DETECT_W, maxX=0, minY=DETECT_H, maxY=0, count=0;
+      while(sp>0){
+        const cur = stack[--sp];
+        const cx2 = cur % DETECT_W, cy2 = (cur / DETECT_W) | 0;
+        count++;
+        if(cx2<minX)minX=cx2; if(cx2>maxX)maxX=cx2;
+        if(cy2<minY)minY=cy2; if(cy2>maxY)maxY=cy2;
+        if(cx2>0){ const n=cur-1; if(!visited[n]){ visited[n]=1; if(isWhite(n)) stack[sp++]=n; } }
+        if(cx2<DETECT_W-1){ const n=cur+1; if(!visited[n]){ visited[n]=1; if(isWhite(n)) stack[sp++]=n; } }
+        if(cy2>0){ const n=cur-DETECT_W; if(!visited[n]){ visited[n]=1; if(isWhite(n)) stack[sp++]=n; } }
+        if(cy2<DETECT_H-1){ const n=cur+DETECT_W; if(!visited[n]){ visited[n]=1; if(isWhite(n)) stack[sp++]=n; } }
+      }
+      const w = maxX-minX+1, h = maxY-minY+1;
+      const bboxArea = w*h;
+      regions.push({minX,minY,w,h,count,fillRatio: count/bboxArea});
+    }
+    const minArea = total * 0.01;
+    const candidates = regions.filter(r =>
+      r.count >= minArea && r.fillRatio > 0.85 &&
+      r.w > DETECT_W*0.08 && r.h > DETECT_H*0.03
+    );
+    const back = 1/scale;
+    return candidates.map(r => ({
+      x: r.minX*back, y: r.minY*back, w: r.w*back, h: r.h*back
+    }));
+  }
+
+  // Groups detected slots into `copies` side-by-side columns (by x position),
+  // then orders each column top-to-bottom. Returns null if the slot count
+  // doesn't cleanly match copies * photosPerSession.
+  function groupSlotsIntoCopies(slots, photosPerSession, copies){
+    if(slots.length !== photosPerSession * copies) return null;
+    const sorted = slots.slice().sort((a,b)=> (a.x+a.w/2) - (b.x+b.w/2));
+    const groups = [];
+    for(let c=0; c<copies; c++){
+      const chunk = sorted.slice(c*photosPerSession, (c+1)*photosPerSession);
+      chunk.sort((a,b)=> a.y - b.y);
+      groups.push(chunk);
+    }
+    return groups;
+  }
+
+  function drawShotIntoBox(ctx, shotCanvas, x, y, w, h){
+    const sRatio = shotCanvas.width / shotCanvas.height;
+    const dRatio = w / h;
+    let sx,sy,sw,sh;
+    if(sRatio > dRatio){
+      sh = shotCanvas.height; sw = sh * dRatio; sy = 0; sx = (shotCanvas.width - sw)/2;
+    }else{
+      sw = shotCanvas.width; sh = sw / dRatio; sx = 0; sy = (shotCanvas.height - sh)/2;
+    }
+    ctx.drawImage(shotCanvas, sx, sy, sw, sh, x, y, w, h);
+  }
+
   async function composeStrip(){
     const W = mmToPx(settings.paperW);
     const H = mmToPx(settings.paperH);
+    const copies = Math.max(1, settings.copies || 1);
+    const n = shots.length;
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
@@ -759,57 +863,77 @@
     ctx.fillStyle = settings.bgColor || '#ffffff';
     ctx.fillRect(0,0,W,H);
 
+    let bgImgEl = null;
     if(settings.bgImage){
-      try{
-        const bg = await loadImage(settings.bgImage);
-        ctx.drawImage(bg, 0, 0, W, H);
-      }catch(e){ /* fall back to solid color already drawn */ }
+      try{ bgImgEl = await loadImage(settings.bgImage); }catch(e){ bgImgEl = null; }
     }
 
-    const margin = Math.round(W * 0.045);
-    const headerH = Math.round(H * 0.055);
-    const footerH = Math.round(H * 0.05);
-    const gap = Math.round(W * 0.045);
-    const n = shots.length;
-    const photoAreaH = H - headerH - footerH - gap*(n+1);
-    const photoW = W - margin*2;
-    const photoH = photoAreaH / n;
+    if(bgImgEl){
+      ctx.drawImage(bgImgEl, 0, 0, W, H);
+    }
 
-    // header text
-    ctx.fillStyle = '#1a1a1a';
-    ctx.font = '600 ' + Math.round(headerH*0.55) + 'px Fraunces, Georgia, serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(settings.eventTitle || 'Photobooth', W/2, headerH/2 + 6);
+    // Try auto-detecting slots from the template (only meaningful if a
+    // custom template image is set). Coordinates are scaled from the
+    // template's natural size to the final canvas size.
+    let groups = null;
+    if(bgImgEl){
+      try{
+        const rawSlots = detectTemplateSlots(bgImgEl);
+        const scaleX = W / bgImgEl.naturalWidth;
+        const scaleY = H / bgImgEl.naturalHeight;
+        const scaledSlots = rawSlots.map(s => ({
+          x: s.x*scaleX, y: s.y*scaleY, w: s.w*scaleX, h: s.h*scaleY
+        }));
+        groups = groupSlotsIntoCopies(scaledSlots, n, copies);
+      }catch(e){ groups = null; }
+    }
 
-    let y = headerH + gap;
-    shots.forEach((shotCanvas)=>{
-      // cover-fit crop into photoW x photoH
-      const sRatio = shotCanvas.width / shotCanvas.height;
-      const dRatio = photoW / photoH;
-      let sx,sy,sw,sh;
-      if(sRatio > dRatio){
-        sh = shotCanvas.height;
-        sw = sh * dRatio;
-        sy = 0;
-        sx = (shotCanvas.width - sw)/2;
-      }else{
-        sw = shotCanvas.width;
-        sh = sw / dRatio;
-        sx = 0;
-        sy = (shotCanvas.height - sh)/2;
+    if(groups){
+      // Place captured photos precisely into the detected template slots,
+      // duplicating the same set of shots into every copy/column found.
+      groups.forEach(slotGroup=>{
+        slotGroup.forEach((slot, i)=>{
+          if(shots[i]) drawShotIntoBox(ctx, shots[i], slot.x, slot.y, slot.w, slot.h);
+        });
+      });
+    }else{
+      // Fallback: no template, or template slots couldn't be matched
+      // reliably — draw an evenly-spaced grid of `copies` columns instead.
+      const colW = W / copies;
+      const margin = Math.round(colW * 0.06);
+      const headerH = bgImgEl ? 0 : Math.round(H * 0.05);
+      const footerH = bgImgEl ? 0 : Math.round(H * 0.045);
+      const gap = Math.round(colW * 0.05);
+      const photoAreaH = H - headerH - footerH - gap*(n+1);
+      const photoW = colW - margin*2;
+      const photoH = photoAreaH / n;
+
+      for(let c=0; c<copies; c++){
+        const colX = c*colW;
+        if(!bgImgEl){
+          ctx.fillStyle = '#1a1a1a';
+          ctx.font = '600 ' + Math.round(headerH*0.5) + 'px Fraunces, Georgia, serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(settings.eventTitle || 'Photobooth', colX + colW/2, headerH/2 + 4);
+        }
+        let y = headerH + gap;
+        shots.forEach(shotCanvas=>{
+          drawShotIntoBox(ctx, shotCanvas, colX + margin, y, photoW, photoH);
+          if(!bgImgEl){
+            ctx.strokeStyle = '#1a1a1a';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(colX + margin, y, photoW, photoH);
+          }
+          y += photoH + gap;
+        });
+        if(!bgImgEl){
+          ctx.fillStyle = '#6b6b6b';
+          ctx.font = '400 ' + Math.round(footerH*0.4) + 'px Inter, sans-serif';
+          ctx.fillText(new Date().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}), colX + colW/2, H - footerH/2);
+        }
       }
-      ctx.drawImage(shotCanvas, sx, sy, sw, sh, margin, y, photoW, photoH);
-      ctx.strokeStyle = '#1a1a1a';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(margin, y, photoW, photoH);
-      y += photoH + gap;
-    });
-
-    // footer
-    ctx.fillStyle = '#6b6b6b';
-    ctx.font = '400 ' + Math.round(footerH*0.42) + 'px Inter, sans-serif';
-    ctx.fillText(new Date().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}), W/2, H - footerH/2);
+    }
 
     return canvas;
   }
@@ -907,6 +1031,8 @@
     document.getElementById('fisheyeVal').textContent = settings.fisheye;
     document.getElementById('paperWidth').value = settings.paperW;
     document.getElementById('paperHeight').value = settings.paperH;
+    document.getElementById('photosPerSessionInput').value = settings.photosPerSession;
+    document.getElementById('copiesInput').value = settings.copies;
     document.getElementById('mirrorToggle').classList.toggle('on', settings.mirror);
     document.getElementById('autosaveToggle').classList.toggle('on', settings.autosave);
     document.getElementById('bgColorInput').value = settings.bgColor || '#ffffff';
@@ -928,8 +1054,10 @@
   function applySettingsFromUI(){
     settings.eventTitle = document.getElementById('eventTitleInput').value.trim() || 'Photobooth';
     settings.fisheye = parseInt(document.getElementById('fisheyeSlider').value, 10);
-    settings.paperW = parseInt(document.getElementById('paperWidth').value, 10) || 50;
-    settings.paperH = parseInt(document.getElementById('paperHeight').value, 10) || 150;
+    settings.paperW = parseInt(document.getElementById('paperWidth').value, 10) || 148;
+    settings.paperH = parseInt(document.getElementById('paperHeight').value, 10) || 210;
+    settings.photosPerSession = Math.max(1, parseInt(document.getElementById('photosPerSessionInput').value, 10) || 4);
+    settings.copies = Math.max(1, parseInt(document.getElementById('copiesInput').value, 10) || 2);
     settings.mirror = document.getElementById('mirrorToggle').classList.contains('on');
     settings.autosave = document.getElementById('autosaveToggle').classList.contains('on');
     settings.bgColor = document.getElementById('bgColorInput').value;
@@ -994,6 +1122,7 @@
 
   // ---------------- Init ----------------
   document.getElementById('eventTitle').textContent = settings.eventTitle;
+  rebuildShotDots();
   navigator.mediaDevices.enumerateDevices().then(()=>{
     startCamera(settings.deviceId || undefined);
   });
