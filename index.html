@@ -450,7 +450,7 @@
   <div id="bottombar">
     <div id="idleControls">
       <button class="btn btn-primary btn-lg" id="startBtn">Mulai Sesi Foto</button>
-      <div id="idleHint">Berpose dan tekan mulai</div>
+      <div id="idleHint">Berpose dan tekan mulai — 3 foto akan diambil otomatis</div>
     </div>
 
     <div id="reviewControls" style="display:none; gap:16px; align-items:center;">
@@ -888,6 +888,11 @@
   // Scans a template image for solid near-white rectangular regions and
   // returns their bounding boxes in the image's OWN natural pixel coordinates.
   // Used to auto-detect photo "slots" in a user-supplied template design.
+  // Scans a template image for "photo slots" and returns their bounding
+  // boxes in the image's OWN natural pixel coordinates. A slot is either a
+  // transparent cutout (the usual way overlay templates are designed — the
+  // photo shows through) or, as a fallback, a solid near-white rectangle
+  // (for templates that were exported without transparency).
   function detectTemplateSlots(imgEl){
     const DETECT_W = 480;
     const scale = DETECT_W / imgEl.naturalWidth;
@@ -899,42 +904,53 @@
     const imgData = cx.getImageData(0,0,DETECT_W,DETECT_H);
     const data = imgData.data;
     const total = DETECT_W*DETECT_H;
-    const isWhite = (px)=>{
-      const i = px*4;
-      return data[i] > 238 && data[i+1] > 238 && data[i+2] > 238 && data[i+3] > 200;
-    };
-    const visited = new Uint8Array(total);
-    const regions = [];
-    const stack = new Int32Array(total);
-    for(let start=0; start<total; start++){
-      if(visited[start]) continue;
-      if(!isWhite(start)){ visited[start]=1; continue; }
-      let sp = 0;
-      stack[sp++] = start;
-      visited[start] = 1;
-      let minX=DETECT_W, maxX=0, minY=DETECT_H, maxY=0, count=0;
-      while(sp>0){
-        const cur = stack[--sp];
-        const cx2 = cur % DETECT_W, cy2 = (cur / DETECT_W) | 0;
-        count++;
-        if(cx2<minX)minX=cx2; if(cx2>maxX)maxX=cx2;
-        if(cy2<minY)minY=cy2; if(cy2>maxY)maxY=cy2;
-        if(cx2>0){ const n=cur-1; if(!visited[n]){ visited[n]=1; if(isWhite(n)) stack[sp++]=n; } }
-        if(cx2<DETECT_W-1){ const n=cur+1; if(!visited[n]){ visited[n]=1; if(isWhite(n)) stack[sp++]=n; } }
-        if(cy2>0){ const n=cur-DETECT_W; if(!visited[n]){ visited[n]=1; if(isWhite(n)) stack[sp++]=n; } }
-        if(cy2<DETECT_H-1){ const n=cur+DETECT_W; if(!visited[n]){ visited[n]=1; if(isWhite(n)) stack[sp++]=n; } }
+
+    function scanFor(matchFn){
+      const visited = new Uint8Array(total);
+      const regions = [];
+      const stack = new Int32Array(total);
+      for(let start=0; start<total; start++){
+        if(visited[start]) continue;
+        if(!matchFn(start)){ visited[start]=1; continue; }
+        let sp = 0;
+        stack[sp++] = start;
+        visited[start] = 1;
+        let minX=DETECT_W, maxX=0, minY=DETECT_H, maxY=0, count=0;
+        while(sp>0){
+          const cur = stack[--sp];
+          const cx2 = cur % DETECT_W, cy2 = (cur / DETECT_W) | 0;
+          count++;
+          if(cx2<minX)minX=cx2; if(cx2>maxX)maxX=cx2;
+          if(cy2<minY)minY=cy2; if(cy2>maxY)maxY=cy2;
+          if(cx2>0){ const n=cur-1; if(!visited[n]){ visited[n]=1; if(matchFn(n)) stack[sp++]=n; } }
+          if(cx2<DETECT_W-1){ const n=cur+1; if(!visited[n]){ visited[n]=1; if(matchFn(n)) stack[sp++]=n; } }
+          if(cy2>0){ const n=cur-DETECT_W; if(!visited[n]){ visited[n]=1; if(matchFn(n)) stack[sp++]=n; } }
+          if(cy2<DETECT_H-1){ const n=cur+DETECT_W; if(!visited[n]){ visited[n]=1; if(matchFn(n)) stack[sp++]=n; } }
+        }
+        const w = maxX-minX+1, h = maxY-minY+1;
+        regions.push({minX,minY,w,h,count,fillRatio: count/(w*h)});
       }
-      const w = maxX-minX+1, h = maxY-minY+1;
-      const bboxArea = w*h;
-      regions.push({minX,minY,w,h,count,fillRatio: count/bboxArea});
+      const minArea = total * 0.008;
+      return regions.filter(r =>
+        r.count >= minArea && r.fillRatio > 0.75 &&
+        r.w > DETECT_W*0.07 && r.h > DETECT_H*0.025
+      );
     }
-    const minArea = total * 0.01;
-    const candidates = regions.filter(r =>
-      r.count >= minArea && r.fillRatio > 0.85 &&
-      r.w > DETECT_W*0.08 && r.h > DETECT_H*0.03
-    );
+
+    const isTransparent = (px)=> data[px*4+3] < 60;
+    let found = scanFor(isTransparent);
+
+    if(found.length === 0){
+      // fallback: try solid near-white opaque rectangles instead
+      const isWhite = (px)=>{
+        const i = px*4;
+        return data[i] > 218 && data[i+1] > 218 && data[i+2] > 218 && data[i+3] > 180;
+      };
+      found = scanFor(isWhite);
+    }
+
     const back = 1/scale;
-    return candidates.map(r => ({
+    return found.map(r => ({
       x: r.minX*back, y: r.minY*back, w: r.w*back, h: r.h*back
     }));
   }
@@ -995,14 +1011,11 @@
     let handled = false;
 
     if(bgImgEl && rawSlots.length === n){
-      // SINGLE-STRIP template: tile the template image itself `copies`
-      // times side by side, and place the same set of shots into the
-      // detected slot positions within every tile.
+      // SINGLE-STRIP template: place photos into the detected slot
+      // positions within every tile FIRST, then draw the template image
+      // itself on top of each tile — its opaque artwork frames the photo
+      // and its transparent cutout lets the photo show through beneath.
       const colW = W / copies;
-      for(let c=0; c<copies; c++){
-        const colX = c*colW;
-        ctx.drawImage(bgImgEl, colX, 0, colW, H);
-      }
       const scaleX = colW / bgImgEl.naturalWidth;
       const scaleY = H / bgImgEl.naturalHeight;
       const orderedSlots = rawSlots.slice().sort((a,b)=> a.y - b.y);
@@ -1013,12 +1026,15 @@
           drawShotIntoBox(ctx, shots[i], colX + slot.x*scaleX, slot.y*scaleY, slot.w*scaleX, slot.h*scaleY);
         });
       }
+      for(let c=0; c<copies; c++){
+        const colX = c*colW;
+        ctx.drawImage(bgImgEl, colX, 0, colW, H);
+      }
       handled = true;
     }else if(bgImgEl && rawSlots.length === n*copies){
       // ALREADY-DOUBLED template (e.g. two strips pre-designed side by
-      // side in one file): stretch it across the full sheet as-is, then
-      // group the detected slots into `copies` columns by position.
-      ctx.drawImage(bgImgEl, 0, 0, W, H);
+      // side in one file): place photos into the detected slot positions
+      // FIRST, then draw the template on top across the full sheet.
       const scaleX = W / bgImgEl.naturalWidth;
       const scaleY = H / bgImgEl.naturalHeight;
       const scaledSlots = rawSlots.map(s => ({
@@ -1031,6 +1047,7 @@
             if(shots[i]) drawShotIntoBox(ctx, shots[i], slot.x, slot.y, slot.w, slot.h);
           });
         });
+        ctx.drawImage(bgImgEl, 0, 0, W, H);
         handled = true;
       }
     }
@@ -1043,8 +1060,12 @@
       const colW = W / copies;
       const margin = Math.round(colW * 0.06);
       const showText = !!settings.showPrintText;
-      const headerH = showText ? Math.round(H * 0.05) : 0;
-      const footerH = showText ? Math.round(H * 0.045) : 0;
+      // Reserve a safe top/bottom margin regardless of whether text is
+      // shown, so photos never get stretched edge-to-edge over a
+      // template's border artwork just because the title/date is off.
+      const framePad = bgImgEl ? Math.round(H * 0.05) : Math.round(H * 0.02);
+      const headerH = framePad + (showText ? Math.round(H * 0.045) : 0);
+      const footerH = framePad + (showText ? Math.round(H * 0.04) : 0);
       const gap = Math.round(colW * 0.05);
       const photoAreaH = H - headerH - footerH - gap*(n+1);
       const photoW = colW - margin*2;
@@ -1052,12 +1073,9 @@
 
       for(let c=0; c<copies; c++){
         const colX = c*colW;
-        if(bgImgEl){
-          ctx.drawImage(bgImgEl, colX, 0, colW, H);
-        }
         if(showText && settings.eventTitle){
           ctx.fillStyle = '#1a1a1a';
-          ctx.font = '600 ' + Math.round(headerH*0.5) + 'px Fraunces, Georgia, serif';
+          ctx.font = '600 ' + Math.round((headerH-framePad)*0.7) + 'px Fraunces, Georgia, serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(settings.eventTitle, colX + colW/2, headerH/2 + 4);
@@ -1072,6 +1090,11 @@
           }
           y += photoH + gap;
         });
+        if(bgImgEl){
+          // draw the template on top as a best-effort overlay so its
+          // border artwork still frames the (approximately-placed) photos
+          ctx.drawImage(bgImgEl, colX, 0, colW, H);
+        }
         if(showText){
           ctx.fillStyle = '#6b6b6b';
           ctx.font = '400 ' + Math.round(footerH*0.4) + 'px Inter, sans-serif';
