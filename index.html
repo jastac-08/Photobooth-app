@@ -450,7 +450,7 @@
   <div id="bottombar">
     <div id="idleControls">
       <button class="btn btn-primary btn-lg" id="startBtn">Mulai Sesi Foto</button>
-      <div id="idleHint">Berpose dan tekan mulai</div>
+      <div id="idleHint">Berpose dan tekan mulai — 3 foto akan diambil otomatis</div>
     </div>
 
     <div id="reviewControls" style="display:none; gap:16px; align-items:center;">
@@ -520,8 +520,8 @@
     <div class="field">
       <label>Ukuran kertas cetak (mm)</label>
       <div class="row">
-        <input type="number" id="paperWidth" value="148" min="20" max="300">
-        <input type="number" id="paperHeight" value="210" min="20" max="400">
+        <input type="number" id="paperWidth" value="102" min="20" max="300">
+        <input type="number" id="paperHeight" value="152" min="20" max="400">
       </div>
       <div class="hint">Default 50mm x 150mm (setara 2x6 inci, ukuran umum strip photobooth).</div>
     </div>
@@ -535,6 +535,8 @@
       <label>Riwayat strip sesi ini</label>
       <div id="galleryStrip"><span id="galleryEmpty">Belum ada foto diambil.</span></div>
     </div>
+
+    <div style="text-align:center; font-size:11px; color:var(--text-dim); margin:4px 0 14px;">Versi aplikasi: 2026-09-03-v4 (default kertas 4R 10.2x15.2cm)</div>
 
     <div id="settingsFooter">
       <button class="btn btn-ghost" id="closeSettingsBtn">Tutup</button>
@@ -562,8 +564,8 @@
     eventTitle: "Photobooth",
     mirror: true,
     fisheye: 0,
-    paperW: 148,
-    paperH: 210,
+    paperW: 102,
+    paperH: 152,
     autosave: true,
     bgColor: "#ffffff",
     templates: [null, null, null, null], // up to 4: {name, dataUrl} or null
@@ -1009,6 +1011,7 @@
     }
 
     let handled = false;
+    let debugInfo = bgImgEl ? ('Template: ' + rawSlots.length + ' kotak terdeteksi (butuh ' + n + ' atau ' + (n*copies) + ')') : 'Tanpa template';
 
     if(bgImgEl && rawSlots.length === n){
       // SINGLE-STRIP template: place photos into the detected slot
@@ -1031,6 +1034,7 @@
         ctx.drawImage(bgImgEl, colX, 0, colW, H);
       }
       handled = true;
+      debugInfo = 'Template 1-strip terdeteksi (' + n + ' kotak), digandakan ' + copies + 'x';
     }else if(bgImgEl && rawSlots.length === n*copies){
       // ALREADY-DOUBLED template (e.g. two strips pre-designed side by
       // side in one file): place photos into the detected slot positions
@@ -1049,6 +1053,7 @@
         });
         ctx.drawImage(bgImgEl, 0, 0, W, H);
         handled = true;
+        debugInfo = 'Template dobel terdeteksi (' + rawSlots.length + ' kotak)';
       }
     }
 
@@ -1057,6 +1062,9 @@
       // match either pattern above — draw an evenly-spaced grid instead.
       // If a template image exists, tile it per column as a best-effort
       // backdrop rather than stretching it across the whole sheet.
+      if(bgImgEl){
+        debugInfo = 'Deteksi GAGAL (' + rawSlots.length + ' kotak, butuh ' + n + ' atau ' + (n*copies) + ') — pakai grid fallback';
+      }
       const colW = W / copies;
       const margin = Math.round(colW * 0.06);
       const showText = !!settings.showPrintText;
@@ -1105,11 +1113,11 @@
       }
     }
 
-    return canvas;
+    return {canvas, debugInfo};
   }
 
   async function showReview(){
-    const strip = await composeStrip();
+    const { canvas: strip, debugInfo } = await composeStrip();
     const disp = document.getElementById('stripCanvasDisplay');
     disp.width = strip.width; disp.height = strip.height;
     disp.getContext('2d').drawImage(strip, 0, 0);
@@ -1124,6 +1132,7 @@
       downloadCanvas(strip);
     }
     addToGallery(strip.toDataURL('image/jpeg', 0.92));
+    if(debugInfo){ showStatus(debugInfo, 4500); }
   }
 
   function backToIdle(){
@@ -1345,8 +1354,8 @@
   function applySettingsFromUI(){
     settings.eventTitle = document.getElementById('eventTitleInput').value.trim();
     settings.fisheye = parseInt(document.getElementById('fisheyeSlider').value, 10);
-    settings.paperW = parseInt(document.getElementById('paperWidth').value, 10) || 148;
-    settings.paperH = parseInt(document.getElementById('paperHeight').value, 10) || 210;
+    settings.paperW = parseInt(document.getElementById('paperWidth').value, 10) || 102;
+    settings.paperH = parseInt(document.getElementById('paperHeight').value, 10) || 152;
     settings.photosPerSession = Math.max(1, parseInt(document.getElementById('photosPerSessionInput').value, 10) || 4);
     settings.copies = Math.max(1, parseInt(document.getElementById('copiesInput').value, 10) || 2);
     settings.mirror = document.getElementById('mirrorToggle').classList.contains('on');
